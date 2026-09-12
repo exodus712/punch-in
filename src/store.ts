@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { quarantineCorruptFile, writeFileAtomic } from './fsio.js';
 
 export interface Active {
   project: string;
@@ -80,21 +81,21 @@ export function loadPath(file: string): Result<Store> {
       goal_secs: Number(store.goal_secs) > 0 ? Number(store.goal_secs) : DEFAULT_GOAL_SECS,
     });
   } catch (err) {
-    return errValue(`corrupt data file ${file}: ${errMsg(err)}`);
+    const quarantined = quarantineCorruptFile(file);
+    if (!quarantined.ok) {
+      return errValue(`corrupt data file ${file} (could not move it aside): ${errMsg(err)}`);
+    }
+    const movedAside = quarantined.path
+      ? ` The corrupt file was moved aside to ${quarantined.path}.`
+      : '';
+    return errValue(`corrupt data file ${file}: ${errMsg(err)}.${movedAside} Starting fresh; restore or delete the backup if needed.`);
   }
 }
 
 export function savePath(file: string, store: Store): Result<void> {
-  const parent = path.dirname(file);
-  if (parent) {
-    fs.mkdirSync(parent, { recursive: true });
-  }
   const raw = JSON.stringify(serializeStore(store), null, 2);
-  try {
-    fs.writeFileSync(file, raw + '\n');
-  } catch (err) {
-    return errValue(`failed to write ${file}: ${errMsg(err)}`);
-  }
+  const written = writeFileAtomic(file, `${raw}\n`, file);
+  if (!written.ok) return errValue(written.error);
   return ok(undefined);
 }
 
@@ -152,6 +153,35 @@ export function parseDateTimeInput(value: string): Date | null {
     date.getSeconds() !== seconds
   ) return null;
   return date;
+}
+
+export function parseDateArg(value: string | undefined):
+  | { ok: true; date: Date }
+  | { ok: false; message: string } {
+  const raw = value?.trim().toLowerCase();
+  if (!raw || raw === 'today') {
+    const now = new Date();
+    return { ok: true, date: new Date(now.getFullYear(), now.getMonth(), now.getDate()) };
+  }
+  if (raw === 'yesterday') {
+    const now = new Date();
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    date.setDate(date.getDate() - 1);
+    return { ok: true, date };
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) {
+    return { ok: false, message: `invalid date '${value}': use YYYY-MM-DD, "today", or "yesterday"` };
+  }
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getMonth() !== Number(match[2]) - 1 ||
+    date.getDate() !== Number(match[3])
+  ) {
+    return { ok: false, message: `invalid date '${value}': use YYYY-MM-DD, "today", or "yesterday"` };
+  }
+  return { ok: true, date };
 }
 
 export function todaySessions(history: Session[], now: Date = new Date()): Session[] {

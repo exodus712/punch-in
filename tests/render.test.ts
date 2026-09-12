@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import React from 'react';
 import { render } from 'ink-testing-library';
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { App } from '../src/views.js';
@@ -366,10 +366,10 @@ describe('preference save errors', () => {
     const frame = instance.lastFrame() ?? '';
     instance.unmount();
 
-    expect(frame).toContain('failed to write preferences');
+    expect(frame).toContain('failed to prepare directory for preferences');
   });
 
-  test('does not overwrite preferences when the existing file cannot be loaded', async () => {
+  test('quarantines an unreadable preferences file and never overwrites it', async () => {
     const corrupt = '{not valid preferences';
     writeFileSync(preferencesFile, corrupt, 'utf8');
 
@@ -384,10 +384,14 @@ describe('preference save errors', () => {
     instance.unmount();
 
     expect(frame).toContain('Unable to save preferences');
-    expect(readFileSync(preferencesFile, 'utf8')).toBe(corrupt);
+    expect(frame).toContain('moved aside');
+    expect(existsSync(preferencesFile)).toBe(false);
+    const backup = readdirSync(dir).find((name) => name.startsWith('preferences.json.corrupt-'));
+    expect(backup).toBeDefined();
+    expect(readFileSync(path.join(dir, backup ?? ''), 'utf8')).toBe(corrupt);
   });
 
-  test('quick preference keys also preserve an unreadable preferences file', async () => {
+  test('quick preference keys also refuse to save over quarantined preferences', async () => {
     const corrupt = '{not valid preferences';
     writeFileSync(preferencesFile, corrupt, 'utf8');
 
@@ -401,7 +405,10 @@ describe('preference save errors', () => {
     instance.unmount();
 
     expect(frame).toContain('Unable to save preferences');
-    expect(readFileSync(preferencesFile, 'utf8')).toBe(corrupt);
+    expect(existsSync(preferencesFile)).toBe(false);
+    const backup = readdirSync(dir).find((name) => name.startsWith('preferences.json.corrupt-'));
+    expect(backup).toBeDefined();
+    expect(readFileSync(path.join(dir, backup ?? ''), 'utf8')).toBe(corrupt);
   });
 });
 

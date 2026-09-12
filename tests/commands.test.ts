@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { editSession, start, status, stop } from '../src/commands.js';
+import { editSession, listDay, start, status, stop } from '../src/commands.js';
 import { loadPath, savePath, type Store } from '../src/store.js';
 
 let dir: string;
@@ -92,6 +92,37 @@ describe('stop', () => {
     const parsed = JSON.parse(raw);
     expect(parsed.history).toHaveLength(1);
     expect(parsed.history[0].project).toBe('api');
+  });
+});
+
+describe('listDay', () => {
+  const day = new Date(2026, 7, 14);
+
+  test('reports an empty day', () => {
+    const result = listDay(day);
+    expect(result).toEqual({ ok: true, message: 'no sessions logged for this day' });
+  });
+
+  test('lists sessions with a padded total line', () => {
+    savePath(dataFile, {
+      active: null,
+      history: [
+        { project: 'longer-project', started_at: new Date(2026, 7, 14, 9, 5, 0), ended_at: new Date(2026, 7, 14, 10, 5, 0), duration_secs: 3600 },
+        { project: 'web', started_at: new Date(2026, 7, 14, 11, 30, 0), ended_at: new Date(2026, 7, 14, 12, 15, 0), duration_secs: 2700 },
+        { project: 'other-day', started_at: new Date(2026, 7, 13, 11, 30, 0), ended_at: new Date(2026, 7, 13, 12, 15, 0), duration_secs: 2700 },
+      ],
+      goal_secs: 8 * 3600,
+    });
+
+    const result = listDay(day);
+    expect(result.ok).toBe(true);
+    const lines = result.message.split('\n');
+    expect(lines[0]).toBe('longer-project  09:05 - 10:05  1h 00m 00s');
+    expect(lines[1]).toBe('web             11:30 - 12:15     45m 00s');
+    expect(lines[2]).toBe('');
+    expect(lines[3].startsWith('total')).toBe(true);
+    expect(lines[3].endsWith('1h 45m 00s')).toBe(true);
+    expect(lines[3].length).toBe(lines[0].length);
   });
 });
 
