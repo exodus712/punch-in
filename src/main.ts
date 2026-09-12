@@ -3,7 +3,9 @@ import { createInterface } from 'node:readline/promises';
 import React from 'react';
 import { render } from 'ink';
 import packageMetadata from '../package.json';
-import { goal, start, status, stop } from './commands.js';
+import { goal, listDay, start, status, stop } from './commands.js';
+import { exportSessions } from './export.js';
+import { parseDateArg } from './store.js';
 import { dataFilesForRemoval, uninstall } from './uninstall.js';
 import { App } from './views.js';
 
@@ -17,6 +19,8 @@ Commands:
   in [PROJECT]   Punch in: start tracking time on a project (defaults to "general")
   out            Punch out: stop the active session and record it
   status         Show the active session and elapsed time
+  list [DATE]    List sessions for a day (YYYY-MM-DD, "today", or "yesterday")
+  export [FMT]   Print history as CSV (default) or JSON, e.g. "punch export json"
   goal [HOURS]   Show or set the daily goal (e.g. "punch goal 6" for 6 hours)
   settings       Open the interactive settings screen
   uninstall      Remove Punch while preserving data
@@ -67,6 +71,19 @@ async function main(): Promise<void> {
     }
     case 'status': {
       printResult(status());
+      return;
+    }
+    case 'list': {
+      const parsed = parseDateArg(args[1]);
+      if (!parsed.ok) {
+        printResult(parsed);
+        return;
+      }
+      printResult(listDay(parsed.date));
+      return;
+    }
+    case 'export': {
+      printResult(exportSessions(args[1] ?? null));
       return;
     }
     case 'goal': {

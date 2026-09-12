@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -8,6 +8,7 @@ import {
   formatDuration,
   isSameDay,
   loadPath,
+  parseDateArg,
   parseDateTimeInput,
   savePath,
   sessionsOn,
@@ -121,6 +122,28 @@ describe('save/load roundtrip', () => {
     writeFileSync(file, '{not json');
     const loaded = loadPath(file);
     expect(loaded.ok).toBe(false);
+    expect(existsSync(file)).toBe(false);
+    const siblings = readdirSync(dir).filter((name) => name.startsWith('bad.json.corrupt-'));
+    expect(siblings).toHaveLength(1);
+    expect(readFileSync(path.join(dir, siblings[0]), 'utf8')).toBe('{not json');
+  });
+
+  test('saves are atomic: no temporary files are left behind', () => {
+    const file = path.join(dir, 'atomic.json');
+    const store: Store = { active: null, history: [], goal_secs: 3600 };
+    for (let i = 0; i < 5; i++) {
+      store.history.push({
+        project: `p${i}`,
+        started_at: new Date(2026, 7, 14, i, 0, 0),
+        ended_at: new Date(2026, 7, 14, i, 30, 0),
+        duration_secs: 1800,
+      });
+      expect(savePath(file, store).ok).toBe(true);
+    }
+    expect(readdirSync(dir)).toEqual(['atomic.json']);
+    const loaded = loadPath(file);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) expect(loaded.value.history).toHaveLength(5);
   });
 
   test('writes RFC3339 dates with local offset that JS can parse', () => {
@@ -128,6 +151,65 @@ describe('save/load roundtrip', () => {
     const iso = toRfc3339Local(d);
     expect(iso).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
     expect(new Date(iso).getTime()).toBe(d.getTime());
+  });
+});
+
+describe('parseDateArg', () => {
+  test('accepts YYYY-MM-DD and normalizes to local midnight', () => {
+    const parsed = parseDateArg('2026-08-14');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.date.getFullYear()).toBe(2026);
+      expect(parsed.date.getMonth()).toBe(7);
+      expect(parsed.date.getDate()).toBe(14);
+      expect(parsed.date.getHours()).toBe(0);
+    }
+  });
+
+  test('accepts today and yesterday with time cleared', () => {
+    const now = new Date();
+    const today = parseDateArg('today');
+    expect(today.ok).toBe(true);
+    if (today.ok) expect(isSameDay(today.date, now)).toBe(true);
+
+    const yesterday = parseDateArg('yesterday');
+    expect(yesterday.ok).toBe(true);
+    if (yesterday.ok) {
+      const expected = startOfDay(now);
+      expected.setDate(expected.getDate() - 1);
+      expect(isSameDay(yesterday.date, expected)).toBe(true);
+    }
+  });
+
+  test('defaults to today for missing or empty input', () => {
+    const now = new Date();
+    const parsed = parseDateArg(undefined);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(isSameDay(parsed.date, now)).toBe(true);
+    expect(parseDateArg('   ').ok).toBe(true);
+  });
+
+  test('rejects malformed and impossible dates', () => {
+    expect(parseDateArg('tomorrow').ok).toBe(false);
+    expect(parseDateArg('2026-13-01').ok).toBe(false);
+    expect(parseDateArg('2026-02-30').ok).toBe(false);
+    expect(parseDateArg('2026-8-14').ok).toBe(false);
+  });
+
+  test('does not shift years 0000-0099 into the 1900s', () => {
+    const parsed = parseDateArg('0099-01-01');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.date.getFullYear()).toBe(99);
+      expect(parsed.date.getMonth()).toBe(0);
+      expect(parsed.date.getDate()).toBe(1);
+    }
+  });
+
+  test('still parses modern years normally', () => {
+    const parsed = parseDateArg('1900-06-15');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.date.getFullYear()).toBe(1900);
   });
 });
 

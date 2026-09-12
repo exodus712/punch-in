@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -44,6 +44,24 @@ describe('preferences', () => {
     const result = loadPreferencesPath(file);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain(`corrupt preferences file ${file}`);
+  });
+
+  test('unreadable preferences return a read error without moving the file', () => {
+    if (process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0)) {
+      return; // mode bits are not enforced on Windows or for root
+    }
+    const file = path.join(dir, 'preferences.json');
+    writeFileSync(file, JSON.stringify(DEFAULT_PREFERENCES), 'utf8');
+    chmodSync(file, 0o000);
+    try {
+      const result = loadPreferencesPath(file);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain(`failed to read preferences ${file}`);
+      expect(existsSync(file)).toBe(true);
+      expect(readdirSync(dir).filter((name) => name.includes('corrupt'))).toEqual([]);
+    } finally {
+      chmodSync(file, 0o644);
+    }
   });
 
   test('unknown preference fields are normalized to defaults', () => {

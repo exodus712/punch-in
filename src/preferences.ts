@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { quarantineCorruptFile, writeFileAtomic } from './fsio.js';
 import { dataFile } from './store.js';
 import { FONTS, TIMER_COLORS, type TimerColor, type TimerFont } from './fonts.js';
 import { RING_CONCEPTS, RING_STYLES, type RingConcept, type RingStyle } from './ring.js';
@@ -44,22 +45,29 @@ export function savePreferences(preferences: Preferences): PreferencesResult<voi
 
 export function loadPreferencesPath(file: string): PreferencesResult<Preferences> {
   if (!fs.existsSync(file)) return { ok: true, value: DEFAULT_PREFERENCES };
+  let raw: string;
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    return { ok: false, error: `failed to read preferences ${file}: ${errorMessage(error)}` };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     return { ok: true, value: normalize(parsed) };
   } catch (error) {
-    return { ok: false, error: `corrupt preferences file ${file}: ${errorMessage(error)}` };
+    const quarantined = quarantineCorruptFile(file);
+    const movedAside = quarantined.ok && quarantined.path
+      ? ` The corrupt file was moved aside to ${quarantined.path}.`
+      : '';
+    return { ok: false, error: `corrupt preferences file ${file}: ${errorMessage(error)}.${movedAside} Starting fresh; restore or delete the backup if needed.` };
   }
 }
 
 export function savePreferencesPath(file: string, preferences: Preferences): PreferencesResult<void> {
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(preferences, null, 2)}\n`);
-    return { ok: true, value: undefined };
-  } catch (error) {
-    return { ok: false, error: `failed to write preferences ${file}: ${errorMessage(error)}` };
-  }
+  const raw = JSON.stringify(preferences, null, 2);
+  const written = writeFileAtomic(file, `${raw}\n`, `preferences ${file}`);
+  if (!written.ok) return { ok: false, error: written.error };
+  return { ok: true, value: undefined };
 }
 
 function normalize(value: Record<string, unknown>): Preferences {

@@ -1,4 +1,4 @@
-import { formatDuration, load, save, type Active } from './store.js';
+import { formatDuration, load, save, sessionsOn, type Active, type Session } from './store.js';
 
 export const DEFAULT_PROJECT = 'general';
 
@@ -91,6 +91,36 @@ export function status(): CmdResult {
     return ok(`tracking '${active.project}' for ${formatDuration(elapsed)}`);
   }
   return ok('no session is running');
+}
+
+export function listDay(date: Date): CmdResult {
+  const store = load();
+  if (!store.ok) return fail(store.error);
+  const sessions = sessionsOn(store.value.history, date);
+  if (sessions.length === 0) return ok('no sessions logged for this day');
+
+  const projectWidth = Math.max(...sessions.map((session) => session.project.length), 'total'.length);
+  const rangeWidth = '00:00 - 00:00'.length;
+  const durationWidth = Math.max(10, ...sessions.map((session) => formatDuration(session.duration_secs).length));
+  const row = (project: string, range: string, duration: string): string =>
+    `${project.padEnd(projectWidth, ' ')}  ${range.padEnd(rangeWidth, ' ')}  ${duration.padStart(durationWidth, ' ')}`;
+
+  const lines = sessions.map((session: Session) =>
+    row(
+      session.project,
+      `${formatClockTime(session.started_at)} - ${formatClockTime(session.ended_at)}`,
+      formatDuration(session.duration_secs),
+    ),
+  );
+  const totalSecs = sessions.reduce((sum, session) => sum + session.duration_secs, 0);
+  lines.push('');
+  lines.push(row('total', '', formatDuration(totalSecs)));
+  return ok(lines.join('\n'));
+}
+
+function formatClockTime(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function goal(hours: number | null): CmdResult {

@@ -76,6 +76,8 @@ You can then use the `punch` commands below from any directory. Alternatively, p
 punch in [PROJECT]    Start a session. The default project is "general".
 punch out             Stop the active session and save it.
 punch status          Show the active session and elapsed time.
+punch list [DATE]     List sessions for a day, with a total.
+punch export [FMT]    Print all sessions as CSV (default) or JSON.
 punch goal [HOURS]    Show or set the daily goal.
 punch settings        Open settings in the TUI.
 punch help            Print command help.
@@ -89,8 +91,14 @@ Examples:
 punch in research
 punch status
 punch out
+punch list
+punch list 2026-08-14
+punch list yesterday
+punch export csv > sessions.csv
 punch goal 6
 ```
+
+`list` accepts a date as `YYYY-MM-DD`, `today`, or `yesterday`, and defaults to today. `export` prints to stdout so you can redirect it into a file; JSON output includes the current daily goal alongside the session list.
 
 The goal accepts a number greater than 0 and up to 24 hours. It defaults to 8 hours.
 
@@ -134,6 +142,8 @@ Set `PUNCH_DATA` to use another history file. Preferences are stored beside it i
 
 The files contain local JSON with timestamps, project names, durations, the daily goal, and display preferences. They are created when you save the first session or preference.
 
+Writes are atomic: content is written to a temporary file and renamed into place, so an interrupted save cannot leave a half-written file behind. If a file is corrupt when it is read, Punch moves it aside to a `*.corrupt-<timestamp>` file next to the original and starts fresh; the corrupt copy is preserved so you can inspect or restore it.
+
 ## Development
 
 ```sh
@@ -164,4 +174,4 @@ The source lives in `src/`, tests live in `tests/`, and the preview script write
 
 ## License
 
-MIT. See [LICENSE](MIT%20License).
+MIT. See [LICENSE](LICENSE).
