@@ -45,8 +45,14 @@ export function savePreferences(preferences: Preferences): PreferencesResult<voi
 
 export function loadPreferencesPath(file: string): PreferencesResult<Preferences> {
   if (!fs.existsSync(file)) return { ok: true, value: DEFAULT_PREFERENCES };
+  let raw: string;
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    return { ok: false, error: `failed to read preferences ${file}: ${errorMessage(error)}` };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     return { ok: true, value: normalize(parsed) };
   } catch (error) {
     const quarantined = quarantineCorruptFile(file);

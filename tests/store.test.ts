@@ -195,6 +195,22 @@ describe('parseDateArg', () => {
     expect(parseDateArg('2026-02-30').ok).toBe(false);
     expect(parseDateArg('2026-8-14').ok).toBe(false);
   });
+
+  test('does not shift years 0000-0099 into the 1900s', () => {
+    const parsed = parseDateArg('0099-01-01');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.date.getFullYear()).toBe(99);
+      expect(parsed.date.getMonth()).toBe(0);
+      expect(parsed.date.getDate()).toBe(1);
+    }
+  });
+
+  test('still parses modern years normally', () => {
+    const parsed = parseDateArg('1900-06-15');
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.date.getFullYear()).toBe(1900);
+  });
 });
 
 describe('date helpers', () => {

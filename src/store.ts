@@ -173,11 +173,16 @@ export function parseDateArg(value: string | undefined):
   if (!match) {
     return { ok: false, message: `invalid date '${value}': use YYYY-MM-DD, "today", or "yesterday"` };
   }
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  date.setFullYear(year);
   if (
     Number.isNaN(date.getTime()) ||
-    date.getMonth() !== Number(match[2]) - 1 ||
-    date.getDate() !== Number(match[3])
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
   ) {
     return { ok: false, message: `invalid date '${value}': use YYYY-MM-DD, "today", or "yesterday"` };
   }
